@@ -1,29 +1,25 @@
+from transformers import pipeline
 from query.query_pipeline import get_top_documents
-from langchain.prompts import ChatPromptTemplate
 from config import RERANKING_STRATEGY, TOP_K
 
-from langchain.llms import Ollama
-
-def get_llm():
-    return Ollama(model="llama3", temperature=0.2)  # ollama 로컬 모델 이름
+llm_pipeline = pipeline("text2text-generation", model="google/flan-t5-small")
 
 def get_final_answer(query: str) -> str:
-    docs = get_top_documents(query)
-    context = "\n\n".join(docs)
+    docs = get_top_documents(query)  # str 리스트
+    context = "\n\n".join(docs)[:1000]
 
-    prompt = ChatPromptTemplate.from_template(
-        """
-        아래 문서를 참고하여 사용자의 질문에 답변하세요.
+    prompt = f"""
+    아래 문서를 참고하여 사용자의 질문에 답변하세요.
 
-        [문서]
-        {context}
+    [문서]
+    {context}
 
-        [질문]
-        {question}
+    [질문]
+    {query}
 
-        [답변]
-        """
-    )
+    [답변]
+    """
 
-    chain = prompt | get_llm()
-    return chain.invoke({"context": context, "question": query})
+    result = llm_pipeline(prompt, max_new_tokens=300, do_sample=False)
+    print("🔍 Raw result:", result)
+    return result[0]["generated_text"]

@@ -1,15 +1,25 @@
+# Core LLM & Vector Search Libraries
 langchain>=0.1.0
 langchain-community>=0.0.18
-pypdf
-pinecone
-pyreadline3
-openai
-sentence-transformers
-tqdm
-pinecone-text
-python-dotenv
-scikit-learn
 transformers
+sentence-transformers
+pinecone
+pinecone-text
+
+# File Parsing
+pypdf
+
+# Environment & I/O
+python-dotenv
+pyreadline3
+tqdm
+
+# ML Tools
+scikit-learn
 torch
+
+# Frontend
 streamlit
-ollama
+
+# (Optional) OpenAI support (나중에 필요할 듯)
+# openai
