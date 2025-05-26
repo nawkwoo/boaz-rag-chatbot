@@ -12,5 +12,8 @@ if INDEXING_STRATEGY == "dense":
     upload_dense_index()
 elif INDEXING_STRATEGY == "sparse":
     upload_sparse_index()
+elif INDEXING_STRATEGY == "hybrid":
+    upload_dense_index()
+    upload_sparse_index()
 else:
     raise ValueError(f"❌ 지원되지 않는 INDEXING_STRATEGY: {INDEXING_STRATEGY}")

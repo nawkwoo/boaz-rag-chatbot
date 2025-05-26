@@ -1,11 +1,21 @@
-from transformers import pipeline
+import os
+from dotenv import load_dotenv
+import google.generativeai as genai
 from query.query_pipeline import get_top_documents
-from config import RERANKING_STRATEGY, TOP_K
+from config import TOP_K_FINAL
 
-llm_pipeline = pipeline("text2text-generation", model="google/flan-t5-small")
+load_dotenv()
+
+# Gemini API 키 설정
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# 모델 선택 (혹시나)
+model = genai.GenerativeModel("gemini-2.0-flash")
+# model = genai.GenerativeModel("gemini-1.5-flash")
+# model = genai.GenerativeModel("gemini-pro")
 
 def get_final_answer(query: str) -> str:
-    docs = get_top_documents(query)  # str 리스트
+    docs = get_top_documents(query)
     context = "\n\n".join(docs)[:1000]
 
     prompt = f"""
@@ -20,6 +30,5 @@ def get_final_answer(query: str) -> str:
     [답변]
     """
 
-    result = llm_pipeline(prompt, max_new_tokens=300, do_sample=False)
-    print("🔍 Raw result:", result)
-    return result[0]["generated_text"]
+    response = model.generate_content(prompt)
+    return response.text.strip()

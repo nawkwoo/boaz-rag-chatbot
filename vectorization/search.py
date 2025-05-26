@@ -1,45 +1,76 @@
 import os
+import json
 from dotenv import load_dotenv
 from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
 from pinecone_text.sparse import BM25Encoder
-from config import INDEXING_STRATEGY, INDEX_NAME, BM25_INDEX_NAME, EMBEDDING_MODEL
+from config import DATA_PATH, SPARSE_INDEX_NAME, TOP_K_FINAL
 
 load_dotenv()
 
-# 모델 초기화
-sbert_model = SentenceTransformer(EMBEDDING_MODEL)
+# ✅ 전역 BM25 인코더 및 fit 여부 플래그
 bm25_encoder = BM25Encoder()
+_fit_done = False
 
-# Pinecone 클라이언트 초기화
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+def load_texts_from_jsonl(folder_path: str):
+    texts = []
+    metadatas = []
+    for fname in os.listdir(folder_path):
+        if not fname.endswith(".jsonl"):
+            continue
+        with open(os.path.join(folder_path, fname), encoding="utf-8") as f:
+            for line in f:
+                record = json.loads(line)
+                texts.append(record["text"])
+                metadatas.append(record["metadata"])
+    return texts, metadatas
 
-# 인덱스 연결
-if INDEXING_STRATEGY == "dense":
-    index = pc.Index(INDEX_NAME)
-elif INDEXING_STRATEGY == "sparse":
-    index = pc.Index(BM25_INDEX_NAME)
-else:
-    raise ValueError(f"[❌ 에러] 알 수 없는 전략: {INDEXING_STRATEGY}")
+def truncate_sparse_vector(sv, k=800):
+    if not sv or "indices" not in sv or len(sv["indices"]) == 0:
+        return {"indices": [], "values": []}
+    if len(sv["indices"]) <= k:
+        return sv
+    topk = sorted(
+        zip(sv["indices"], sv["values"]),
+        key=lambda x: abs(x[1]),
+        reverse=True
+    )[:k]
+    return {
+        "indices": [i for i, _ in topk],
+        "values": [v for _, v in topk]
+    }
 
-def search_documents(query: str, top_k: int = 10) -> list[dict]:
-    """질문에 대해 dense 또는 sparse 방식으로 Pinecone에서 유사 문서 검색"""
-    if INDEXING_STRATEGY == "dense":
-        query_vec = sbert_model.encode([query])[0].tolist()
-        results = index.query(vector=query_vec, top_k=top_k, include_metadata=True)
+def search_documents(query: str, top_k: int = TOP_K_FINAL * 2) -> list[dict]:
+    global _fit_done
 
-    elif INDEXING_STRATEGY == "sparse":
-        query_sparse = bm25_encoder.encode_queries([query])[0]
-        results = index.query(sparse_vector=query_sparse, top_k=top_k, include_metadata=True)
+    # ✅ 최초 1회만 BM25 학습
+    if not _fit_done:
+        texts, _ = load_texts_from_jsonl(DATA_PATH)
+        bm25_encoder.fit(texts)
+        _fit_done = True
 
-    else:
-        raise ValueError(f"[❌ 에러] 지원되지 않는 검색 전략: {INDEXING_STRATEGY}")
+    query_sparse = bm25_encoder.encode_queries([query])[0]
+    query_sparse = truncate_sparse_vector(query_sparse)
 
+    if len(query_sparse["indices"]) == 0:
+        print("❌ Sparse 벡터가 비어 있어 검색 불가")
+        return []
+
+    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+    index = pc.Index(SPARSE_INDEX_NAME)
+
+    result = index.query(
+        vector=None,
+        sparse_vector=query_sparse,
+        top_k=top_k,
+        include_metadata=True
+    )
+
+    hits = result.get("matches", [])
     return [
         {
-            "score": match["score"],
-            "text": match["metadata"].get("text", ""),
-            "metadata": match["metadata"]
+            "text": hit["metadata"].get("text", ""),
+            "metadata": hit["metadata"],
+            "score": hit["score"]
         }
-        for match in results["matches"]
+        for hit in hits
     ]

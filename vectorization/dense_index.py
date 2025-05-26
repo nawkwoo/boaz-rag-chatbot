@@ -1,10 +1,13 @@
-import os, json
+# dense_index.py
+
+import os
+import json
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from langchain.schema import Document
 from pinecone import Pinecone, ServerlessSpec, Vector
 
-from config import DATA_PATH, INDEX_NAME, EMBEDDING_MODEL, EMBEDDING_DIMENSION
+from config import DATA_PATH, DENSE_INDEX_NAME, DENSE_MODEL_NAME, EMBEDDING_DIMENSION
 
 load_dotenv()
 
@@ -24,9 +27,9 @@ def upload_dense_index():
 
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
-    if INDEX_NAME not in pc.list_indexes().names():
+    if DENSE_INDEX_NAME not in pc.list_indexes().names():
         pc.create_index(
-            name=INDEX_NAME,
+            name=DENSE_INDEX_NAME,
             dimension=EMBEDDING_DIMENSION,
             metric="cosine",
             spec=ServerlessSpec(
@@ -39,7 +42,7 @@ def upload_dense_index():
     texts = [doc.page_content for doc in docs]
     metadatas = [doc.metadata for doc in docs]
 
-    model = SentenceTransformer(EMBEDDING_MODEL)
+    model = SentenceTransformer(DENSE_MODEL_NAME)
     vectors = model.encode(texts, show_progress_bar=True).tolist()
 
     to_upsert = [
@@ -47,7 +50,7 @@ def upload_dense_index():
         for i in range(len(texts))
     ]
 
-    index = pc.Index(INDEX_NAME)
+    index = pc.Index(DENSE_INDEX_NAME)
     BATCH_SIZE = 100
     for i in range(0, len(to_upsert), BATCH_SIZE):
         batch = to_upsert[i:i+BATCH_SIZE]
