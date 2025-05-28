@@ -1,10 +1,14 @@
 # config.py
 
+# 메타데이터
+USE_METADATA = False
+
 # 인덱싱 전략: "dense", "sparse", "hybrid"
-INDEXING_STRATEGY = "sparse"
+INDEXING_STRATEGY = "hybrid"
 
 # 사용할 임베딩 모델 (SBERT 기반)
 DENSE_MODEL_NAME = "all-MiniLM-L6-v2"
+# DENSE_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 # 더 강한 모델 추천 (우선 유지해보자)
 # cross-encoder/ms-marco-MiniLM-L-12-v2
@@ -12,7 +16,7 @@ CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 # cross-encoder/qnli-roberta-base
 
 # SBERT 임베딩 차원 (정확한 모델 차원으로 수정)
-EMBEDDING_DIMENSION = 384
+EMBEDDING_DIMENSION = 768
 
 # Pinecone 관련 설정
 DENSE_INDEX_NAME = "boaz-index"
@@ -28,8 +32,9 @@ USE_RERANKING = True
 RERANKING_STRATEGY = "cross-encoder"
 
 # 청크 관련
-CHUNK_SIZE = 100
-CHUNK_OVERLAP = 10
+CHUNK_SIZE = 300
+CHUNK_OVERLAP = 100
 
 # 저장된 전처리 결과 위치
 DATA_PATH = "data_with_meta"
+# DATA_PATH = "data_with_meta/navercafe_study_fin.jsonl"

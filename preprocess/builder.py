@@ -3,7 +3,7 @@ from langchain.schema import Document
 from preprocess.loader import load_document
 from preprocess.splitter import get_splitter
 from preprocess.metadata import extract_metadata_from_filename, enrich_metadata
-from config import CHUNK_SIZE, CHUNK_OVERLAP
+from config import CHUNK_SIZE, CHUNK_OVERLAP, USE_METADATA
 
 def process_all_documents(data_dir: str, output_dir: str):
     splitter = get_splitter()
@@ -27,12 +27,16 @@ def process_all_documents(data_dir: str, output_dir: str):
 
             with open(output_path, "a", encoding="utf-8") as f:
                 for idx, chunk in enumerate(chunks, start=1):
-                    meta = enrich_metadata(
-                        file_meta,
-                        idx,
-                        (idx - 1) * CHUNK_SIZE,
-                        min(len(doc.page_content), idx * CHUNK_SIZE)
-                    )
+                    if USE_METADATA:
+                        meta = enrich_metadata(
+                            file_meta,
+                            idx,
+                            (idx - 1) * CHUNK_SIZE,
+                            min(len(doc.page_content), idx * CHUNK_SIZE)
+                        )
+                    else:
+                        meta = {}
+
                     json.dump({"text": chunk, "metadata": meta}, f, ensure_ascii=False)
                     f.write("\n")
                     total_chunks += 1
