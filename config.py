@@ -1,14 +1,16 @@
-# config.py
+# Sparse (BM25) 사용 여부
+USE_SPARSE = True  # False면 Dense 사용
 
-# 임베딩 모델 이름 (HuggingFace SBERT)
+# Dense 설정
 DENSE_MODEL_NAME = "all-MiniLM-L6-v2"
-
-# Pinecone 인덱스 이름
 DENSE_INDEX_NAME = "boaz-dense-index"
+ID_TO_TEXT_PATH_DENSE = "data_with_meta/id_to_text_dense.json"
 
-# top-k 설정
+# Sparse 설정
+SPARSE_MODEL_NAME = "pinecone-sparse-english-v0"
+SPARSE_INDEX_NAME = "boaz-bm25-index"
+ID_TO_TEXT_PATH_SPARSE = "data_with_meta/id_to_text_sparse.json"
+
+# 공통 설정
 TOP_K = 20
-
-# 데이터 경로
 DATA_PATH = "data"
-ID_TO_TEXT_PATH = "data_with_meta/id_to_text_dense.json"

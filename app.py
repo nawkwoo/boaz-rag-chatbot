@@ -3,7 +3,7 @@ import streamlit as st
 import logging
 
 from config import TOP_K
-from retriever import create_dense_retriever
+from retriever.factory import create_retriever
 from chain import GeminiLLM, build_qa_chain, run_qa_chain
 
 # 로그 설정
@@ -20,7 +20,7 @@ def load_components():
     Retriever와 Gemini 기반 LLM을 로드하고, QA 체인을 생성합니다.
     Streamlit 캐시를 사용해 반복 로딩을 방지합니다.
     """
-    retriever = create_dense_retriever()
+    retriever = create_retriever()  # ✅ 수정된 부분
 
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     if not gemini_api_key:
