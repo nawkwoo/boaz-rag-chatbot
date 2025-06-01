@@ -2,7 +2,8 @@
 USE_SPARSE = True  # False면 Dense 사용
 
 # Dense 설정
-DENSE_MODEL_NAME = "all-MiniLM-L6-v2"
+# DENSE_MODEL_NAME = "all-MiniLM-L6-v2"
+DENSE_MODEL_NAME = "jhgan/ko-sbert-sts"
 DENSE_INDEX_NAME = "boaz-dense-index"
 ID_TO_TEXT_PATH_DENSE = "data_with_meta/id_to_text_dense.json"
 

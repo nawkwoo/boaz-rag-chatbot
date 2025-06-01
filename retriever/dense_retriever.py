@@ -6,7 +6,7 @@ from pinecone import Pinecone as PineconeClient
 from langchain.schema import Document, BaseRetriever
 from sentence_transformers import SentenceTransformer
 
-from config import DENSE_INDEX_NAME, DENSE_MODEL_NAME, TOP_K, ID_TO_TEXT_PATH
+from config import DENSE_INDEX_NAME, DENSE_MODEL_NAME, TOP_K, ID_TO_TEXT_PATH_DENSE
 
 # .env 파일에서 환경변수 로드 (PINECONE_API_KEY, ENV 등)
 load_dotenv()
@@ -50,12 +50,12 @@ class DensePineconeRetriever(BaseRetriever):
         self.top_k = top_k
 
         # ID → 원문 텍스트 매핑 불러오기
-        if os.path.exists(ID_TO_TEXT_PATH):
-            with open(ID_TO_TEXT_PATH, "r", encoding="utf-8") as f:
+        if os.path.exists(ID_TO_TEXT_PATH_DENSE):
+            with open(ID_TO_TEXT_PATH_DENSE, "r", encoding="utf-8") as f:
                 self.id_to_text = json.load(f)
         else:
             self.id_to_text = {}
-            print(f"[WARN] 매핑 파일을 찾을 수 없습니다: {ID_TO_TEXT_PATH}")
+            print(f"[WARN] 매핑 파일을 찾을 수 없습니다: {ID_TO_TEXT_PATH_DENSE}")
 
     def get_relevant_documents(self, query: str) -> List[Document]:
         """

@@ -1,60 +1,75 @@
-# retriever/sparse_retriever.py
+from typing import Any, List
+from dotenv import load_dotenv
+from langchain.schema import Document
+from langchain_core.retrievers import BaseRetriever
+from pydantic import BaseModel, Field
 
 import os
 import json
-from typing import Any, List
-from dotenv import load_dotenv
-from pinecone import Pinecone as PineconeClient
+from pinecone import Pinecone
 from pinecone_text.sparse import BM25Encoder
-from langchain.schema import Document, BaseRetriever
 
-from config import SPARSE_MODEL_NAME, ID_TO_TEXT_PATH_SPARSE
+from config import SPARSE_INDEX_NAME, TOP_K, ID_TO_TEXT_PATH_SPARSE
 
+# 환경 변수 로드
 load_dotenv()
 
-
-class SparsePineconeRetriever(BaseRetriever):
-    index: Any = None
-    encoder: Any = None
-    id_to_text: dict = {}
-    top_k: int = 0
-
-    def __init__(self, index_name: str, top_k: int):
-        super().__init__()
-
-        api_key = os.getenv("PINECONE_API_KEY")
-        env = os.getenv("PINECONE_ENV", os.getenv("PINECONE_REGION", "us-east-1-aws"))
-        if not api_key:
-            raise ValueError("PINECONE_API_KEY 환경 변수가 설정되지 않았습니다.")
-
-        pc = PineconeClient(api_key=api_key, environment=env)
-        self.index = pc.Index(index_name)
-
-        self.encoder = BM25Encoder(model_name=SPARSE_MODEL_NAME)
-        self.top_k = top_k
-
-        if os.path.exists(ID_TO_TEXT_PATH_SPARSE):
-            with open(ID_TO_TEXT_PATH_SPARSE, "r", encoding="utf-8") as f:
-                self.id_to_text = json.load(f)
-        else:
-            print(f"[WARN] 매핑 파일이 없습니다: {ID_TO_TEXT_PATH_SPARSE}")
-            self.id_to_text = {}
+class SparsePineconeRetriever(BaseRetriever, BaseModel):
+    index_name: str = Field(...)
+    top_k: int = Field(...)
+    encoder: Any = Field(...)
+    index: Any = Field(...)
+    id_to_text: dict = Field(...)
 
     def get_relevant_documents(self, query: str) -> List[Document]:
-        query_sparse = self.encoder.encode_queries([query])[0]
+        # Query 인코딩
+        query_vec = self.encoder.encode_queries([query])[0]
 
+        # Pinecone에서 검색
         results = self.index.query(
-            vector=query_sparse,
             top_k=self.top_k,
-            include_metadata=True,
-            namespace=""  # 선택적
+            sparse_vector=query_vec,
+            include_metadata=True
         )
 
-        docs: List[Document] = []
+        # 검색 결과를 Document로 변환
+        docs = []
         for match in results.get("matches", []):
-            doc_id = match.get("id", "")
+            doc_id = match["id"]
             text = self.id_to_text.get(doc_id, "")
-            meta = match.get("metadata", {})
-            if text:
-                docs.append(Document(page_content=text, metadata=meta))
+            metadata = match.get("metadata", {})
+            docs.append(Document(page_content=text, metadata=metadata))
+
         return docs
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+def create_sparse_retriever(
+    index_name: str = SPARSE_INDEX_NAME,
+    top_k: int = TOP_K
+) -> SparsePineconeRetriever:
+    # 문서 불러오기 (text만 리스트로)
+    with open(ID_TO_TEXT_PATH_SPARSE, "r", encoding="utf-8") as f:
+        id_to_text = json.load(f)
+    texts = list(id_to_text.values())
+
+    # BM25 인코더 초기화 후 학습
+    encoder = BM25Encoder()
+    encoder.fit(texts)  # 🔥 여기 필수!
+
+    # Pinecone 연결
+    api_key = os.getenv("PINECONE_API_KEY")
+    env = os.getenv("PINECONE_ENV", os.getenv("PINECONE_REGION", "us-east-1-aws"))
+    pc = Pinecone(api_key=api_key, environment=env)
+    index = pc.Index(index_name)
+
+    return SparsePineconeRetriever(
+        index_name=index_name,
+        top_k=top_k,
+        encoder=encoder,
+        index=index,
+        id_to_text=id_to_text
+    )
+
