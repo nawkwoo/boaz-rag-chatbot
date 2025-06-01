@@ -1,0 +1,34 @@
+# 가상환경 (Python venv)
+venv/
+.env/
+env/
+
+# 환경변수 파일
+*.env
+
+# 데이터 디렉토리 내부 파일은 제외하지만 폴더 구조는 유지
+data/*
+!data/.gitkeep
+
+data_with_meta/*
+!data_with_meta/.gitkeep
+
+# 파이썬 캐시/빌드 파일
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# 로그, 임시 파일
+*.log
+*.tmp
+*.bak
+
+# Jupyter 및 기타 IDE 설정 파일
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# Mac OS, Linux 시스템 파일
+.DS_Store
+Thumbs.db
