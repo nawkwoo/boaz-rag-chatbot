@@ -15,6 +15,8 @@ load_dotenv()
 class SBERTEmbeddings:
     """
     단일 쿼리를 SBERT 벡터로 변환하는 임베딩 래퍼 클래스
+    - SentenceTransformer 기반 모델 사용
+    - Dense 검색에서 질의어 임베딩에 사용됨
     """
 
     def __init__(self, model_name: str):
@@ -26,7 +28,9 @@ class SBERTEmbeddings:
 
 class DensePineconeRetriever(BaseRetriever):
     """
-    Pinecone에서 Dense 벡터 검색을 수행하는 LangChain 호환 Retriever 클래스
+    Pinecone에서 Dense 벡터 기반 검색을 수행하는 LangChain 호환 Retriever
+    - SBERT로 임베딩된 쿼리 벡터를 기반으로 검색
+    - 결과를 LangChain Document 형태로 반환
     """
 
     index: Any = None
@@ -46,10 +50,11 @@ class DensePineconeRetriever(BaseRetriever):
         pc = PineconeClient(api_key=_api_key, environment=_env)
         self.index = pc.Index(index_name)
 
+        # 임베딩 모델 및 파라미터 초기화
         self.embeddings = SBERTEmbeddings(DENSE_MODEL_NAME)
         self.top_k = top_k
 
-        # ID → 원문 텍스트 매핑 불러오기
+        # ID → 텍스트 매핑 파일 불러오기 (없으면 빈 딕셔너리)
         if os.path.exists(ID_TO_TEXT_PATH_DENSE):
             with open(ID_TO_TEXT_PATH_DENSE, "r", encoding="utf-8") as f:
                 self.id_to_text = json.load(f)
@@ -59,7 +64,7 @@ class DensePineconeRetriever(BaseRetriever):
 
     def get_relevant_documents(self, query: str) -> List[Document]:
         """
-        쿼리를 벡터화한 뒤 Pinecone 검색 결과를 LangChain Document 형태로 반환
+        질의어 → 벡터 변환 → Pinecone 유사도 검색 → Document 리스트로 반환
         """
         q_vec = self.embeddings.embed_query(query)
 
@@ -84,6 +89,6 @@ def create_dense_retriever(
     top_k: int = TOP_K
 ) -> DensePineconeRetriever:
     """
-    외부에서 사용할 수 있도록 Retriever 인스턴스를 반환하는 헬퍼 함수
+    외부 모듈에서 호출 가능한 Dense Retriever 생성 함수
     """
     return DensePineconeRetriever(index_name=index_name, top_k=top_k)

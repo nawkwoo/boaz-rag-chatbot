@@ -6,16 +6,16 @@ import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 from langchain.llms.base import LLM
 from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
+from langchain.schema import Document
 
-# 로깅 설정
+# 로그 설정
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
 class GeminiLLM(LLM):
     """
-    Google Gemini 모델을 LangChain LLM 인터페이스로 감싼 클래스
+    Google Gemini API를 LangChain LLM 인터페이스로 감싼 커스텀 클래스
     """
 
     model_name: str = "gemini-2.0-flash"
@@ -29,12 +29,13 @@ class GeminiLLM(LLM):
         if model_name:
             self.model_name = model_name
 
-        # Gemini API 키로 구성 설정
+        # Gemini API 구성
         genai.configure(api_key=api_key)
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
         """
-        프롬프트를 입력받아 Gemini API로 응답 생성
+        LangChain 내부에서 호출되는 메서드
+        프롬프트를 받아 Gemini API로 응답을 생성
         """
         try:
             model = genai.GenerativeModel(self.model_name)
@@ -60,50 +61,90 @@ class GeminiLLM(LLM):
         return "gemini"
 
 
-def build_qa_chain(llm: LLM, retriever: Any):
+# Cross-Encoder 기반 문서 재정렬
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch
+
+def cross_encoder_rerank(query: str, docs: List[Any], top_k: int = 3) -> List[Any]:
     """
-    주어진 LLM과 Retriever를 기반으로 QA 체인을 구성합니다.
-    LangChain의 RetrievalQA를 사용하며, 한국어 사용자 응답에 최적화된 프롬프트 포함.
+    Cross-Encoder 모델로 문서 relevance 점수 계산 후 재정렬
     """
-    prompt_template = """
-    너는 'BOAZ'라는 이름의 빅데이터 연합동아리에 대한 정보를 제공하는 고도화된 전문 챗봇이야.
-    질문자는 이 동아리에 대해 진지하게 관심을 갖고 있는 지원자이므로, 질문에 정확하고 신뢰도 높은 정보를 바탕으로 답변해야 해!
+    model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(model_name)
 
-    다음 규칙을 무조건 지켜줘!
-    1. 답변은 반드시 한국어로 작성해.
-    2. 제공된 참조 문서(context) 내용을 우선으로 고려해서서 답변해줘. 잘 모를 경우만 검색해해.
-    3. 하나의 정리된 문단으로 응답해줘. 모르면 모른다고, 우리 https://www.bigdataboaz.com 공식 홈페이지 주소를 알려줘.
-    4. 지원자가 혼동하지 않도록 핵심 내용을 중심으로 정리해서 설명해.
-    5. 개인정보, 민감한 내용, 또는 추론성 정보는 절대 포함하지마! 이건 진짜 안 지키면 지구 멸망해.
+    pairs = [(query, doc.page_content) for doc in docs]
+    inputs = tokenizer.batch_encode_plus(pairs, return_tensors="pt", truncation=True, padding=True)
 
-    잘 부탁해. 너 꼼꼼하고 확실한 녀석이잖아.
-    
-    질문: {question}
+    with torch.no_grad():
+        logits = model(**inputs).logits.squeeze()
 
-    참조 문서: {context}
+    scores = logits.tolist()
+    reranked = [doc for _, doc in sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)]
+    return reranked[:top_k]
 
-    답변 (한국어):
+
+# 프롬프트 템플릿 정의
+prompt_template = """
+너는 'BOAZ'라는 이름의 빅데이터 연합동아리에 대해 안내하는 고도화된 전문 챗봇이야.
+사용자는 이 동아리에 진지한 관심을 갖고 있으며, 질문에 대해 정확하고 신뢰도 높은 정보를 원해.
+
+다음 지시사항을 반드시 지켜서 답변해 줘:
+
+0. 사람 이름은 절대 제공하지 마.
+1. "보아즈는 뭐하는 곳이야?"처럼 광범위한 질문에는 핵심 내용을 중심으로 300~400자 내외로 간결하게 정리해.
+2. 복수의 결과가 있다면 최신 정보를 우선으로 알려줘.
+3. 각 항목은 한두 문장으로 요약해. 너무 길게 설명하지 마.
+4. "어떤게 있어?" 같은 질문엔 표 형태의 목록으로 깔끔하게 보여줘.
+5. "어떤게 있었어?"처럼 과거를 묻는 질문에는 있다/없다, 년도, 기본 정보 중심으로 답해.
+6. "OO을 추천해 주세요" 요청에는 근거 있는 간단한 추천을 해줘.
+7. 개인정보 요청 시에는 "제공하기 어렵습니다"라고 명확히 거절해.
+8. 답변 마지막엔 항상 “추가 문의가 필요하면 언제든 알려주세요.”라는 친근한 마무리 멘트를 넣어.
+9. 동아리와 무관한 질문, 또는 정책상 답변 불가한 내용은 "죄송합니다, 답변 범위를 벗어납니다."라고 말해줘.
+
+📘 규칙
+- 답변은 반드시 한국어로 작성해.
+- 제공된 참조 문서(context)의 내용을 최우선으로 고려해 답변해.
+- 내용을 모를 경우, "정확한 정보가 없습니다. 공식 홈페이지 https://www.bigdataboaz.com 를 참고해주세요."라고 안내해.
+- 민감하거나 추론성 높은 내용은 절대 작성하지 마. 이건 정말 중요해!
+
+질문: {question}
+
+참조 문서: {context}
+
+답변 (한국어):
+"""
+
+prompt = PromptTemplate(
+    input_variables=["question", "context"],
+    template=prompt_template,
+)
+
+
+def build_qa_chain_with_rerank(llm: LLM, retriever: Any, top_k: int = 3):
     """
+    Cross-Encoder rerank가 통합된 LangChain QA 체인 구성
+    """
+    def rerank_retriever(query: str) -> List[Document]:
+        initial_docs = retriever.get_relevant_documents(query)
+        return cross_encoder_rerank(query, initial_docs, top_k=top_k)
 
-    prompt = PromptTemplate(
-        input_variables=["question", "context"],
-        template=prompt_template,
-    )
+    # LangChain의 RetrievalQA 구조를 커스터마이징
+    class CustomQAChain:
+        def invoke(self, inputs: dict):
+            query = inputs["query"]
+            docs = rerank_retriever(query)
+            context = "\n\n".join(doc.page_content for doc in docs)
+            final_prompt = prompt.format(question=query, context=context)
+            answer = llm(final_prompt)
+            return {"result": answer, "source_documents": docs}
 
-    # Retrieval 기반 QA 체인 구성
-    chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        chain_type_kwargs={"prompt": prompt},
-        return_source_documents=True
-    )
-    return chain
+    return CustomQAChain()
 
 
 def run_qa_chain(chain, query: str):
     """
-    QA 체인을 실행하여 질의에 대한 응답 및 출처 문서 반환
+    QA 체인을 실행하여 응답 및 참조 문서를 반환
     """
     try:
         if hasattr(chain, 'invoke'):

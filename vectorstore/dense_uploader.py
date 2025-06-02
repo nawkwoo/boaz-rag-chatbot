@@ -8,14 +8,13 @@ from preprocess import load_documents
 from sentence_transformers import SentenceTransformer
 from langchain.schema import Document
 
-# 환경변수(.env)에서 Pinecone API 키 및 환경 설정 불러오기
+# .env 파일에서 Pinecone API 키 및 환경 설정 로드
 load_dotenv()
-
 
 class SBERTEmbeddings:
     """
-    Sentence-BERT 임베딩을 수행하는 래퍼 클래스
-    - LangChain Document와 호환되도록 설계됨
+    SBERT 임베딩 모델 래퍼 클래스
+    - 문서 전체 또는 단일 쿼리를 임베딩하여 벡터 반환
     """
 
     def __init__(self, model_name: str):
@@ -23,14 +22,14 @@ class SBERTEmbeddings:
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
-        여러 문서를 임베딩하여 SBERT 벡터 리스트로 반환
+        다수 문서를 임베딩하여 SBERT 벡터 리스트로 반환
         """
         vectors = self.model.encode(texts, show_progress_bar=False)
         return vectors.tolist()
 
     def embed_query(self, text: str) -> List[float]:
         """
-        단일 텍스트(예: 질의어)를 SBERT 벡터로 변환
+        단일 쿼리를 SBERT 벡터로 변환
         """
         vector = self.model.encode([text], show_progress_bar=False)[0]
         return vector.tolist()
@@ -41,12 +40,13 @@ def create_and_upload_vectorstore(
     model_name: str = DENSE_MODEL_NAME
 ) -> None:
     """
-    문서 로딩 → 임베딩 → Pinecone 업로드 파이프라인
-    1. 문서를 청킹하여 로딩
-    2. SBERT로 임베딩
-    3. Pinecone 인덱스 생성 또는 재사용
-    4. ID → 원문 매핑 저장
-    5. 벡터 + 메타데이터를 Pinecone에 batch upsert
+    Dense 벡터 인덱스를 Pinecone에 생성하고 문서를 업로드하는 파이프라인
+
+    1. 문서 로딩 및 청킹
+    2. SBERT 임베딩 수행
+    3. 인덱스 존재 여부 확인 및 필요 시 생성
+    4. id → 원문 매핑 저장
+    5. 벡터 및 메타데이터 업로드 (batch 단위)
     """
 
     # 1. 문서 불러오기
@@ -55,23 +55,23 @@ def create_and_upload_vectorstore(
         print("❌ 문서가 없습니다. 'data' 디렉토리를 확인하세요.")
         return
 
-    # 2. ID → 원문 텍스트 매핑 생성 및 저장
+    # 2. ID → 텍스트 매핑 저장 (JSON)
     id_to_text: dict = {str(i): doc.page_content for i, doc in enumerate(all_docs)}
     os.makedirs(os.path.dirname(ID_TO_TEXT_PATH), exist_ok=True)
     with open(ID_TO_TEXT_PATH, "w", encoding="utf-8") as f:
         json.dump(id_to_text, f, ensure_ascii=False, indent=2)
     print(f"✅ 로컬 매핑 파일 생성 완료: '{ID_TO_TEXT_PATH}' (총 {len(all_docs)}개 문서)")
 
-    # 3. SBERT 임베딩 모델 초기화
+    # 3. SBERT 모델 초기화
     embeddings = SBERTEmbeddings(model_name)
 
-    # 4. Pinecone 연결 및 인덱스 생성
+    # 4. Pinecone 연결 및 인덱스 준비
     api_key = os.getenv("PINECONE_API_KEY")
     env_str = os.getenv("PINECONE_ENV", os.getenv("PINECONE_REGION", "us-east-1-aws"))
     if not api_key:
         raise ValueError("❌ PINECONE_API_KEY 환경 변수가 설정되지 않았습니다.")
 
-    # "us-east-1-aws" → cloud: aws, region: us-east-1
+    # 환경 문자열 파싱: "us-east-1-aws" → region + cloud
     parts = env_str.split("-")
     cloud = parts[-1]
     region = "-".join(parts[:-1])
@@ -90,13 +90,12 @@ def create_and_upload_vectorstore(
 
     index = pc.Index(index_name)
 
-    # 5. 벡터 임베딩 및 메타데이터 준비
+    # 5. 벡터 및 메타데이터 업로드
     texts = [doc.page_content for doc in all_docs]
     metadatas = [doc.metadata for doc in all_docs]
     ids = [str(i) for i in range(len(all_docs))]
     vectors = embeddings.embed_documents(texts)
 
-    # Pinecone에 배치 업로드 (100개 단위)
     batch_size = 100
     total = len(ids)
     for start in range(0, total, batch_size):
@@ -113,5 +112,5 @@ def create_and_upload_vectorstore(
 
 
 if __name__ == "__main__":
-    # 이 파일을 단독 실행할 경우, 벡터스토어를 생성 및 업로드
+    # 단독 실행 시 벡터 업로드 수행
     create_and_upload_vectorstore()

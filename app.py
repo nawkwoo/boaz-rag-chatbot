@@ -3,8 +3,8 @@ import streamlit as st
 import logging
 
 from retriever.factory import create_retriever
-from chain import GeminiLLM, build_qa_chain, run_qa_chain
-from config import DENSE_INDEX_NAME, DENSE_MODEL_NAME, TOP_K, ID_TO_TEXT_PATH_DENSE
+from chain import GeminiLLM, build_qa_chain_with_rerank, run_qa_chain
+from config import TOP_K
 
 # 로그 설정
 logging.basicConfig(level=logging.INFO)
@@ -17,8 +17,9 @@ if "history" not in st.session_state:
 @st.cache_resource
 def load_components():
     """
-    Retriever와 Gemini 기반 LLM을 로드하고, QA 체인을 생성합니다.
-    Streamlit 캐시를 사용해 반복 로딩을 방지합니다.
+    Retriever와 Gemini 기반 LLM 인스턴스를 로드
+    - 캐싱을 통해 반복 로딩 방지
+    - 환경 변수로부터 Gemini API 키 확인
     """
     retriever = create_retriever()
 
@@ -28,32 +29,38 @@ def load_components():
         st.stop()
 
     llm = GeminiLLM(api_key=gemini_api_key)
-    qa_chain = build_qa_chain(llm, retriever)
-
-    return qa_chain
+    return retriever, llm
 
 def main():
+    """
+    Streamlit 앱의 메인 함수
+    - 사용자 질의 입력
+    - RAG 프로세스 실행
+    - 결과 및 히스토리 출력
+    """
     st.set_page_config(page_title="Boaz RAG", page_icon="🤖")
     st.title("💬 Boaz 챗봇")
 
-    # 사용자 질문 입력
     query = st.text_input("질문을 입력하세요:", key="query_input")
 
     if st.button("질문하기"):
         if not query:
             st.warning("먼저 질문을 입력해주세요.")
         else:
-            qa_chain = load_components()
+            retriever, llm = load_components()
 
             with st.spinner("응답 생성 중..."):
+                # QA 체인 생성 및 실행
+                qa_chain = build_qa_chain_with_rerank(llm, retriever, top_k=3)
                 result = run_qa_chain(qa_chain, query)
-                answer = result.get("result", "")
-                src_docs = result.get("source_documents", [])
 
-                # 세션 기록 저장
-                st.session_state.history.append((query, answer, src_docs))
+                answer = result.get("result", "[결과 없음]")
+                reranked_docs = result.get("source_documents", [])
 
-    # 이전 Q&A 출력
+                # 히스토리에 저장
+                st.session_state.history.append((query, answer, reranked_docs))
+
+    # 이전 질문/답변 히스토리 출력
     if st.session_state.history:
         st.markdown("### History")
 
@@ -61,7 +68,7 @@ def main():
             st.markdown(f"**Q{i}. {q}**")
             st.markdown(a)
 
-            # 콘솔에는 참조 문서 출력, 화면에는 미표시
+            # 참조 문서는 콘솔에만 출력
             if docs:
                 for doc in docs:
                     src = doc.metadata.get("source", "알 수 없음")

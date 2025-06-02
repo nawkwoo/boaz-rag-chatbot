@@ -7,7 +7,6 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from config import DATA_PATH
 
-
 def load_documents() -> List[Document]:
     """
     data/ 폴더 내의 PDF 및 CSV 파일을 로드하고,
@@ -18,12 +17,13 @@ def load_documents() -> List[Document]:
 
     # 텍스트 청킹 전략 정의
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,             # 최대 청크 길이
+        chunk_size=500,             # 청크 최대 길이
         chunk_overlap=100,          # 청크 간 중첩 길이
-        length_function=len,
-        separators=["\n\n", "\n", " ", ""]
+        length_function=len,        # 기본 길이 측정 함수
+        separators=["\n\n", "\n", " ", ""]  # 청크 구분자 우선순위
     )
 
+    # data/ 폴더 내 파일 순회
     for fname in os.listdir(DATA_PATH):
         path = os.path.join(DATA_PATH, fname)
         if not os.path.isfile(path):
@@ -33,16 +33,19 @@ def load_documents() -> List[Document]:
         if fname.lower().endswith(".pdf"):
             try:
                 loader = PyPDFLoader(path)
-                raw_docs = loader.load()
+                raw_docs = loader.load()  # 각 페이지별 Document 객체 리스트 반환
             except Exception as e:
                 print(f"[❌ PDF 로딩 실패] {fname}: {e}")
                 continue
 
-            # 모든 페이지 내용을 이어붙인 후 chunking
+            # 전체 페이지를 이어붙인 후 청크 단위로 분할
             full_text = "\n".join([doc.page_content for doc in raw_docs])
             chunks = text_splitter.split_text(full_text)
             for idx, chunk in enumerate(chunks):
-                metadata = {"source": fname, "chunk_index": idx}
+                metadata = {
+                    "source": fname,
+                    "chunk_index": idx  # 몇 번째 청크인지 기록
+                }
                 all_docs.append(Document(page_content=chunk, metadata=metadata))
 
         # CSV 파일 처리
@@ -54,14 +57,14 @@ def load_documents() -> List[Document]:
                 continue
 
             for idx, row in df.iterrows():
-                # 각 행(row)을 하나의 문자열로 변환 후 chunking
+                # 한 행을 "컬럼명: 값" 형식으로 합쳐 하나의 문자열로 변환
                 combined = " | ".join(f"{col}: {row[col]}" for col in df.columns)
                 chunks = text_splitter.split_text(combined)
                 for chunk_idx, chunk in enumerate(chunks):
                     metadata = {
                         "source": fname,
-                        "row_index": idx,
-                        "chunk_index": chunk_idx
+                        "row_index": idx,        # 원본 row 위치
+                        "chunk_index": chunk_idx  # 해당 row 내 청크 순번
                     }
                     all_docs.append(Document(page_content=chunk, metadata=metadata))
 
